@@ -6,6 +6,9 @@ __pycache__/
 .ipynb_checkpoints/
 .DS_Store
 
+# Training artifacts
+models/
+
 # Data files can be large; uncomment if you want to exclude them
 # data/raw/
 # data/processed/
