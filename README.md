@@ -3,17 +3,17 @@
 An end-to-end reinforcement learning system that trains DQN and PPO agents to trade AAPL stock. Built as a portfolio project demonstrating the full ML lifecycle — data pipeline, custom environment, agent training, backtesting, and live deployment.
 
 ## Live demo
-
+https://rl-trading-agent-kweeynevx86uzry4stwcjx.streamlit.app
 
 ## Results (test set 2022–2024)
 
 | Metric | DQN | PPO | Buy & Hold |
 |---|---|---|---|
-| Total return | — | — | — |
-| Sharpe ratio | — | — | — |
-| Max drawdown | — | — | — |
-| Calmar ratio | — | — | — |
-| Trades | — | — | 1 |
+| Total return | 38.5% | 11.01 | 40.83 |
+| Sharpe ratio | 0.56 | 0.276 | 0.559 |
+| Max drawdown | -31.2 | -29.11 | -30.91 |
+| Calmar ratio | 0.375 | 0.124 | 0.393 |
+| Trades | 657 | 263 | 1 |
 
 
 
