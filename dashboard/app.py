@@ -171,7 +171,7 @@ def build_trade_chart(env: TradingEnv, raw_df: pd.DataFrame,
 
 def build_drawdown_chart(envs: dict, labels: dict) -> go.Figure:
     """Overlapping drawdown chart for multiple agents."""
-    colors = {"DQN": "steelblue", "PPO": "darkorange", "Buy & Hold": "gray"}
+    colors = {"DQN": "#4682b4", "PPO": "#ff8c00", "Buy & Hold": "#888888"}
     fig = go.Figure()
 
     for key, env_obj in envs.items():

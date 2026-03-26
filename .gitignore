@@ -6,14 +6,13 @@ __pycache__/
 .ipynb_checkpoints/
 .DS_Store
 
-# Training artifacts
-models/
-
-# Reports / dashboard static artifacts
-reports/
-streamlit/
-
-# Data files can be large; uncomment if you want to exclude them
-# data/raw/
-# data/processed/
-
+data/raw/
+data/processed/
+*.pkl
+__pycache__/
+.env
+*.pyc
+.DS_Store
+*.egg-info/
+.ipynb_checkpoints/
+wandb/
