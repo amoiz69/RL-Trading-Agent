@@ -9,6 +9,10 @@ __pycache__/
 # Training artifacts
 models/
 
+# Reports / dashboard static artifacts
+reports/
+streamlit/
+
 # Data files can be large; uncomment if you want to exclude them
 # data/raw/
 # data/processed/
