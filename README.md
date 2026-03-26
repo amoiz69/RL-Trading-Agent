@@ -4,7 +4,6 @@ An end-to-end reinforcement learning system that trains DQN and PPO agents to tr
 
 ## Live demo
 
-> **[your-name-rl-trading.streamlit.app](https://share.streamlit.io)** ← replace with your URL after deploying
 
 ## Results (test set 2022–2024)
 
@@ -16,7 +15,7 @@ An end-to-end reinforcement learning system that trains DQN and PPO agents to tr
 | Calmar ratio | — | — | — |
 | Trades | — | — | 1 |
 
-*Fill in your actual numbers from Phase 5 after running the backtest.*
+
 
 ## Project structure
 
