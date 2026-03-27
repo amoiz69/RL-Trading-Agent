@@ -1,6 +1,6 @@
 # RL Trading Agent
 
-An end-to-end reinforcement learning system that trains DQN and PPO agents to trade AAPL stock. Built as a portfolio project demonstrating the full ML lifecycle — data pipeline, custom environment, agent training, backtesting, and live deployment.
+An end-to-end reinforcement learning system that trains DQN and PPO agents to trade S&P 500 stocks. Built as a portfolio project demonstrating the full ML lifecycle — data pipeline, custom environment, agent training, backtesting, and live deployment.
 
 ## Live demo
 https://rl-trading-agent-kweeynevx86uzry4stwcjx.streamlit.app
