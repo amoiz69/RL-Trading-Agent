@@ -86,12 +86,22 @@ def get_sp500_tickers() -> list[str]:
 # ------------------------------------------------------------------ #
 
 @st.cache_resource
-def load_model(agent: str):
-    """Load the AAPL-trained SB3 model. Cached once per agent type."""
-    path = os.path.join(PROJECT_ROOT, "models", f"{agent.lower()}_aapl.zip")
+def load_model(agent: str, model_variant: str = "aapl"):
+    """
+    Load a trained SB3 model.
+    model_variant: 'aapl'  → models/ppo_aapl.zip or dqn_aapl.zip
+                   'multi' → models/ppo_multi.zip  (PPO only)
+    """
+    if model_variant == "multi":
+        # Multi-stock model is PPO only
+        path = os.path.join(PROJECT_ROOT, "models", "ppo_multi.zip")
+    else:
+        path = os.path.join(PROJECT_ROOT, "models", f"{agent.lower()}_aapl.zip")
     if not os.path.exists(path):
         return None
-    cls = DQN if agent == "DQN" else PPO
+    cls = PPO  # multi is always PPO; aapl uses the right class
+    if model_variant == "aapl":
+        cls = DQN if agent == "DQN" else PPO
     return cls.load(path)
 
 
@@ -276,6 +286,27 @@ with st.sidebar:
 
     agent = st.selectbox("Agent", ["DQN", "PPO"])
 
+    # -- Model variant selector ---
+    multi_exists = os.path.exists(os.path.join(PROJECT_ROOT, "models", "ppo_multi.zip"))
+    model_options = ["AAPL-only"]
+    if multi_exists:
+        model_options.append("Multi-stock (PPO)")
+    else:
+        model_options.append("Multi-stock (PPO) ← train first")
+
+    model_label = st.selectbox(
+        "Model",
+        options=model_options,
+        help=(
+            "AAPL-only: original single-stock trained model.\n"
+            "Multi-stock: generalised model trained on 8 diverse S&P 500 stocks.\n"
+            "Train the multi-stock model: python agents/multi_stock_ppo.py --steps 100000"
+        ),
+        disabled=(not multi_exists and len(model_options) == 1),
+    )
+    model_variant   = "multi" if "Multi-stock" in model_label and multi_exists else "aapl"
+    multi_selected  = (model_variant == "multi")
+
     # --- Load data first so we can build dynamic split labels ---
     data_ok = True
     try:
@@ -312,31 +343,53 @@ with st.sidebar:
 
 
 # ------------------------------------------------------------------ #
-# Non-AAPL disclaimer banner
+# Banner — model info + transfer mode notice
 # ------------------------------------------------------------------ #
 
-if data_ok and ticker != "AAPL":
-    st.info(
-        f"🔬 **Zero-shot transfer mode** — The DQN and PPO models were trained "
-        f"exclusively on **AAPL** data. They are being applied to **{ticker}** "
-        f"without any retraining. The observation space (features + window) is "
-        f"identical, so inference works — but performance may differ from "
-        f"AAPL results.",
-        icon="ℹ️",
-    )
+if data_ok:
+    if multi_selected:
+        if agent == "DQN":
+            st.warning(
+                "⚠️ The **Multi-stock** model is PPO only. "
+                "Switching Agent to **PPO** is recommended. "
+                "(The multi-stock model will still run — it uses the PPO policy regardless.)"
+            )
+        if ticker != "AAPL":
+            st.success(
+                f"🌐 **Multi-stock model** — trained on AAPL, MSFT, TSLA, JPM, JNJ, XOM, AMZN & PG. "
+                f"Applying to **{ticker}**. This model was designed to generalise across stocks."
+            )
+        else:
+            st.success(
+                "🌐 **Multi-stock model** — trained on 8 diverse S&P 500 stocks for better generalisation."
+            )
+    elif ticker != "AAPL":
+        st.info(
+            f"🔬 **Zero-shot transfer mode** — The AAPL-only models were trained exclusively on "
+            f"**AAPL** data and are being applied to **{ticker}** without retraining. "
+            f"Try the **Multi-stock** model (train it first) for better cross-stock performance.",
+            icon="ℹ️",
+        )
 
 
 # ------------------------------------------------------------------ #
 # Load model
 # ------------------------------------------------------------------ #
 
-model = load_model(agent)
+model = load_model(agent, model_variant)
 
 if model is None:
-    st.error(
-        f"Model not found: `models/{agent.lower()}_aapl.zip`\n\n"
-        "Train the agent first by running Phase 4 (`phase4_train.ipynb`)."
-    )
+    if model_variant == "multi":
+        st.error(
+            "Multi-stock model not found: `models/ppo_multi.zip`\n\n"
+            "Train it first by running:\n"
+            "```\npython agents/multi_stock_ppo.py --steps 100000\n```"
+        )
+    else:
+        st.error(
+            f"Model not found: `models/{agent.lower()}_aapl.zip`\n\n"
+            "Train the agent first by running Phase 4 (`phase4_train.ipynb`)."
+        )
     st.stop()
 
 if not data_ok:
@@ -367,7 +420,7 @@ if "results" not in st.session_state:
 # ------------------------------------------------------------------ #
 
 if run_button:
-    run_key = f"{ticker}_{agent}_{split_key}"
+    run_key = f"{ticker}_{agent}_{split_key}_{model_variant}"
 
     with st.spinner(f"Running {agent} on {ticker} — {split_label}..."):
         env     = run_backtest(model, df, raw_df, WINDOW_SIZE)
@@ -389,6 +442,19 @@ tab1, tab2, tab3 = st.tabs(["Agent run", "Metrics", "Tearsheet"])
 
 run_key = st.session_state.get("last_run")
 
+# Parse run_key helper
+def _parse_run_key(rk: str | None):
+    """Returns (ticker, agent, split, model_variant) or Nones."""
+    if not rk:
+        return None, None, None, None
+    parts = rk.split("_")
+    # Format: TICKER_AGENT_SPLIT_VARIANT  (variant may be absent for old keys)
+    if len(parts) >= 4:
+        return parts[0], parts[1], parts[2], parts[3]
+    elif len(parts) == 3:
+        return parts[0], parts[1], parts[2], "aapl"
+    return None, None, None, None
+
 
 # ================================================================== #
 # TAB 1 — Agent run chart
@@ -409,8 +475,10 @@ with tab1:
         c3.metric("Sharpe ratio",  f"{metrics['sharpe']:.3f}")
         c4.metric("Trades",        metrics['n_trades'])
 
+        rk_ticker, rk_agent, rk_split, rk_variant = _parse_run_key(run_key)
+        chart_label = f"{rk_agent} ({'Multi' if rk_variant == 'multi' else 'AAPL-only'})"
         st.plotly_chart(
-            build_trade_chart(env, raw_df, WINDOW_SIZE, agent),
+            build_trade_chart(env, raw_df, WINDOW_SIZE, chart_label),
             use_container_width=True,
         )
         st.caption("▲ green = Buy   ▼ red = Sell")
@@ -427,14 +495,11 @@ with tab2:
         metrics, bnh = st.session_state.results[run_key]
         env          = st.session_state.envs[run_key]
 
-        # Parse run_key to get ticker / agent / split for this result
-        rk_parts  = run_key.split("_")
-        rk_ticker = rk_parts[0]
-        rk_agent  = rk_parts[1]
-        rk_split  = rk_parts[2]
-        rk_label  = f"Validation" if rk_split == "val" else "Test"
+        rk_ticker, rk_agent, rk_split, rk_variant = _parse_run_key(run_key)
+        rk_label   = "Validation" if rk_split == "val" else "Test"
+        model_tag  = "Multi-stock" if rk_variant == "multi" else "AAPL-only"
 
-        st.subheader(f"{rk_agent} vs Buy & Hold — {rk_ticker} {rk_label}")
+        st.subheader(f"{rk_agent} ({model_tag}) vs Buy & Hold — {rk_ticker} {rk_label}")
         st.caption("Delta values show agent performance relative to Buy & Hold baseline.")
 
         c1, c2, c3 = st.columns(3)
@@ -463,9 +528,9 @@ with tab2:
 
         st.divider()
 
-        # If both DQN and PPO have been run for the same ticker+split, show drawdown
-        dqn_key = f"{rk_ticker}_DQN_{rk_split}"
-        ppo_key = f"{rk_ticker}_PPO_{rk_split}"
+        # If both DQN and PPO have been run for the same ticker+split+variant, show drawdown
+        dqn_key = f"{rk_ticker}_DQN_{rk_split}_{rk_variant}"
+        ppo_key = f"{rk_ticker}_PPO_{rk_split}_{rk_variant}"
 
         envs_for_dd = {}
         if dqn_key in st.session_state.envs:
@@ -493,7 +558,7 @@ with tab2:
             "Metric"        : ["Final portfolio ($)", "Total return (%)", "Sharpe ratio",
                                 "Max drawdown (%)",   "Calmar ratio",      "Win rate (%)",
                                 "Trades executed",    "Trade frequency (%)"],
-            rk_agent        : [metrics["final_value"],   metrics["total_return"],
+            f"{rk_agent} ({model_tag})" : [metrics["final_value"],   metrics["total_return"],
                                 metrics["sharpe"],        metrics["max_drawdown"],
                                 metrics["calmar"],        metrics["win_rate"],
                                 metrics["n_trades"],      metrics["trade_frequency"]],

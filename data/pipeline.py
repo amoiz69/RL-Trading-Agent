@@ -59,6 +59,11 @@ def download(ticker: str = "AAPL",
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     path = RAW_DIR / f"{ticker}.csv"
 
+    # Validate any existing cache — re-download if file is too small (likely corrupt)
+    if path.exists() and path.stat().st_size < 1024:
+        print(f"    [WARN] {path.name} looks corrupt ({path.stat().st_size} bytes). Re-downloading...")
+        path.unlink()
+
     if not path.exists():
         df = yf.download(
             ticker, start=start, end=end,
