@@ -36,21 +36,13 @@ def run_backtest(model, df: pd.DataFrame, raw_df: pd.DataFrame,
     """
     Run one full deterministic episode on any dataset split.
 
-    Parameters
-    ----------
-    model     : trained SB3 model (DQN or PPO)
-    df        : normalised feature DataFrame
-    raw_df    : raw OHLCV DataFrame (real dollar prices)
-    window_size : observation window
-    initial_balance : starting portfolio value
-
-    Returns
-    -------
-    env : completed TradingEnv with portfolio_history and trade_log populated
+    Always uses reward_mode='raw' — reward shaping only matters during
+    training, not inference. This keeps portfolio_history clean.
     """
     env = TradingEnv(df, raw_df,
                      initial_balance=initial_balance,
-                     window_size=window_size)
+                     window_size=window_size,
+                     reward_mode="raw")     # inference: raw reward, no Sharpe shaping
     obs, _ = env.reset()
     done = False
 

@@ -253,14 +253,29 @@ def build_drawdown_chart(envs: dict, labels: dict) -> go.Figure:
     return fig
 
 
-def metric_delta_color(agent_val, bnh_val, lower_is_better=False):
-    """Return delta string for st.metric."""
+def _delta_vs_bnh(agent_val, bnh_val, lower_is_better: bool = False) -> str | None:
+    """
+    Compute a delta string for st.metric(delta=...) against the B&H baseline.
+
+    For 'higher is better' metrics (return, Sharpe, Calmar, win rate):
+        positive delta  = agent beats B&H  → Streamlit renders green  ✓
+        negative delta  = agent trails B&H → Streamlit renders red    ✓
+
+    For 'lower magnitude is better' metrics (max_drawdown):
+        max_drawdown values are negative numbers (e.g. -14.5, -20.0).
+        A less-negative value means a smaller drawdown, i.e. agent is BETTER.
+        We pass delta_color='inverse' to st.metric, which flips the colours.
+        The raw delta (agent - bnh) for drawdown:
+            agent=-14, bnh=-20  →  delta = -14 - (-20) = +6  →  inverse → GREEN  ✓
+            agent=-25, bnh=-20  →  delta = -25 - (-20) = -5  →  inverse → RED    ✓
+        So: always compute agent - bnh; let delta_color='inverse' handle colours.
+    """
     if isinstance(agent_val, str) or isinstance(bnh_val, str):
         return None
-    delta = agent_val - bnh_val
-    if lower_is_better:
-        delta = -delta
-    return f"{delta:+.3f} vs B&H"
+    try:
+        return f"{float(agent_val) - float(bnh_val):+.3f} vs B&H"
+    except (TypeError, ValueError):
+        return None
 
 
 # ------------------------------------------------------------------ #
@@ -444,16 +459,25 @@ run_key = st.session_state.get("last_run")
 
 # Parse run_key helper
 def _parse_run_key(rk: str | None):
-    """Returns (ticker, agent, split, model_variant) or Nones."""
+    """
+    Returns (ticker, agent, split, model_variant) from a run_key string.
+    Format: {TICKER}_{AGENT}_{SPLIT}_{VARIANT}
+    Uses rsplit to safely handle tickers that contain underscores (e.g. BRK_B).
+    """
     if not rk:
         return None, None, None, None
-    parts = rk.split("_")
-    # Format: TICKER_AGENT_SPLIT_VARIANT  (variant may be absent for old keys)
-    if len(parts) >= 4:
-        return parts[0], parts[1], parts[2], parts[3]
-    elif len(parts) == 3:
-        return parts[0], parts[1], parts[2], "aapl"
-    return None, None, None, None
+    # rsplit from the right — variant, split, agent are always the last 3 tokens
+    try:
+        remainder, variant = rk.rsplit("_", 1)
+        remainder, split   = remainder.rsplit("_", 1)
+        ticker, agent      = remainder.rsplit("_", 1)
+        return ticker, agent, split, variant
+    except ValueError:
+        # Fallback for old-format keys without variant
+        parts = rk.split("_")
+        if len(parts) == 3:
+            return parts[0], parts[1], parts[2], "aapl"
+        return None, None, None, None
 
 
 # ================================================================== #
@@ -468,12 +492,14 @@ with tab1:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Final portfolio",
                   f"${metrics['final_value']:,.0f}",
-                  delta=f"${metrics['final_value']-10_000:+,.0f}")
+                  delta=f"${metrics['final_value'] - 10_000:+,.0f} vs start")
         c2.metric("Total return",
                   f"{metrics['total_return']:+.1f}%",
-                  delta=metric_delta_color(metrics['total_return'], bnh['total_return']))
-        c3.metric("Sharpe ratio",  f"{metrics['sharpe']:.3f}")
-        c4.metric("Trades",        metrics['n_trades'])
+                  delta=_delta_vs_bnh(metrics['total_return'], bnh['total_return']))
+        c3.metric("Sharpe ratio",
+                  f"{metrics['sharpe']:.3f}",
+                  delta=_delta_vs_bnh(metrics['sharpe'], bnh['sharpe']))
+        c4.metric("Trades", metrics['n_trades'])
 
         rk_ticker, rk_agent, rk_split, rk_variant = _parse_run_key(run_key)
         chart_label = f"{rk_agent} ({'Multi' if rk_variant == 'multi' else 'AAPL-only'})"
@@ -504,27 +530,51 @@ with tab2:
 
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.metric("Total return (%)",
-                      f"{metrics['total_return']:+.2f}%",
-                      delta=f"{metrics['total_return'] - bnh['total_return']:+.2f}% vs B&H")
-            st.metric("Win rate (%)",
-                      f"{metrics['win_rate']:.1f}%")
+            # Total return: higher is better → positive delta = green ✓
+            ret_delta = _delta_vs_bnh(metrics['total_return'], bnh['total_return'])
+            st.metric(
+                "Total return",
+                f"{metrics['total_return']:+.2f}%",
+                delta=f"{ret_delta} %" if ret_delta else None,
+            )
+            st.metric(
+                "Win rate",
+                f"{metrics['win_rate']:.1f}%",
+                help="% of sell orders executed above average buy price",
+            )
 
         with c2:
-            st.metric("Sharpe ratio",
-                      f"{metrics['sharpe']:.3f}",
-                      delta=f"{metrics['sharpe'] - bnh['sharpe']:+.3f} vs B&H")
-            st.metric("Calmar ratio",
-                      f"{metrics['calmar']:.3f}",
-                      delta=f"{metrics['calmar'] - bnh['calmar']:+.3f} vs B&H")
+            # Sharpe: higher is better → positive delta = green ✓
+            st.metric(
+                "Sharpe ratio",
+                f"{metrics['sharpe']:.3f}",
+                delta=_delta_vs_bnh(metrics['sharpe'], bnh['sharpe']),
+            )
+            # Calmar: higher is better → positive delta = green ✓
+            st.metric(
+                "Calmar ratio",
+                f"{metrics['calmar']:.3f}",
+                delta=_delta_vs_bnh(metrics['calmar'], bnh['calmar']),
+            )
 
         with c3:
-            st.metric("Max drawdown (%)",
-                      f"{metrics['max_drawdown']:.2f}%",
-                      delta=f"{bnh['max_drawdown'] - metrics['max_drawdown']:+.2f}% vs B&H",
-                      delta_color="inverse")
-            st.metric("Trade frequency",
-                      f"{metrics['trade_frequency']:.1f}%")
+            # Max drawdown: LOWER magnitude is better.
+            # Both values are negative (e.g. -24% vs -31%).
+            # _delta_vs_bnh = agent - bnh = -24 - (-31) = +7 → positive when agent wins
+            # delta_color="normal": positive = GREEN ✓, negative = RED ✓
+            dd_delta = _delta_vs_bnh(metrics['max_drawdown'], bnh['max_drawdown'])
+            st.metric(
+                "Max drawdown",
+                f"{metrics['max_drawdown']:.2f}%",
+                delta=f"{dd_delta} %" if dd_delta else None,
+                delta_color="normal",  # +delta = agent less severe drawdown = green ✓
+                help="Maximum peak-to-trough decline. Less negative = better.",
+            )
+            st.metric(
+                "Trade frequency",
+                f"{metrics['trade_frequency']:.1f}%",
+                help="% of timesteps where a trade was executed",
+            )
 
         st.divider()
 
@@ -551,21 +601,38 @@ with tab2:
             if len(envs_for_dd) < 3:
                 st.caption("Run both DQN and PPO to see a full comparison in the drawdown chart.")
 
-        # Full metrics table
+        # Full metrics table with formatted values and correct signs
         st.divider()
         st.subheader("Full metrics table")
+
+        def _fmt(val, key):
+            """Format a metric value for the table."""
+            if isinstance(val, str):   # e.g. 'N/A'
+                return val
+            if key == "final_value":
+                return f"${val:,.2f}"
+            if key in ("total_return", "max_drawdown", "win_rate",
+                       "trade_frequency"):
+                return f"{val:+.2f}%" if key in ("total_return", "max_drawdown") else f"{val:.1f}%"
+            if key in ("sharpe", "calmar"):
+                return f"{val:.3f}"
+            return str(val)
+
+        metric_keys = [
+            ("Final portfolio",    "final_value"),
+            ("Total return",       "total_return"),
+            ("Sharpe ratio",       "sharpe"),
+            ("Max drawdown",       "max_drawdown"),
+            ("Calmar ratio",       "calmar"),
+            ("Win rate",           "win_rate"),
+            ("Trades executed",    "n_trades"),
+            ("Trade frequency",    "trade_frequency"),
+        ]
+        agent_col  = f"{rk_agent} ({model_tag})"
         table_data = {
-            "Metric"        : ["Final portfolio ($)", "Total return (%)", "Sharpe ratio",
-                                "Max drawdown (%)",   "Calmar ratio",      "Win rate (%)",
-                                "Trades executed",    "Trade frequency (%)"],
-            f"{rk_agent} ({model_tag})" : [metrics["final_value"],   metrics["total_return"],
-                                metrics["sharpe"],        metrics["max_drawdown"],
-                                metrics["calmar"],        metrics["win_rate"],
-                                metrics["n_trades"],      metrics["trade_frequency"]],
-            "Buy & Hold"    : [bnh["final_value"],        bnh["total_return"],
-                                bnh["sharpe"],             bnh["max_drawdown"],
-                                bnh["calmar"],             bnh["win_rate"],
-                                bnh["n_trades"],           bnh["trade_frequency"]],
+            "Metric"   : [label for label, _ in metric_keys],
+            agent_col  : [_fmt(metrics[k], k) for _, k in metric_keys],
+            "Buy & Hold": [_fmt(bnh[k], k)    for _, k in metric_keys],
         }
         st.dataframe(pd.DataFrame(table_data), use_container_width=True, hide_index=True)
 
