@@ -3,6 +3,9 @@ agents/dqn_agent.py
 -------------------
 Trains a DQN agent on the trading environment.
 
+Uses risk-adjusted reward (rolling Sharpe + drawdown penalty) by default.
+Pass reward_mode='raw' to TradingEnv to reproduce original v1 behaviour.
+
 How to run
     python agents/dqn_agent.py
 
@@ -86,11 +89,13 @@ def train_dqn(use_wandb: bool = True):
     # -- Build environments -----------------------------------------------
     # Training env — wrapped in Monitor for SB3 episode logging
     def make_train_env():
-        env = TradingEnv(train_df, train_raw, window_size=WINDOW_SIZE)
+        env = TradingEnv(train_df, train_raw, window_size=WINDOW_SIZE,
+                         reward_mode="sharpe")
         return Monitor(env)
 
     def make_val_env():
-        env = TradingEnv(val_df, val_raw, window_size=WINDOW_SIZE)
+        env = TradingEnv(val_df, val_raw, window_size=WINDOW_SIZE,
+                         reward_mode="sharpe")
         return Monitor(env)
 
     train_env = DummyVecEnv([make_train_env])

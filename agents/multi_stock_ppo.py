@@ -116,7 +116,8 @@ def load_all_stocks(tickers: list[str]) -> dict:
 def make_train_env(ticker: str, train_df: pd.DataFrame, raw_df: pd.DataFrame):
     """Return a callable that creates a monitored TradingEnv for one training stock."""
     def _make():
-        env = TradingEnv(train_df, raw_df.loc[train_df.index], window_size=WINDOW_SIZE)
+        env = TradingEnv(train_df, raw_df.loc[train_df.index], window_size=WINDOW_SIZE,
+                         reward_mode="sharpe")
         return Monitor(env)
     return _make
 
@@ -124,7 +125,8 @@ def make_train_env(ticker: str, train_df: pd.DataFrame, raw_df: pd.DataFrame):
 def make_val_env(val_df: pd.DataFrame, raw_df: pd.DataFrame):
     """Return a callable that creates the AAPL validation environment."""
     def _make():
-        env = TradingEnv(val_df, raw_df.loc[val_df.index], window_size=WINDOW_SIZE)
+        env = TradingEnv(val_df, raw_df.loc[val_df.index], window_size=WINDOW_SIZE,
+                         reward_mode="sharpe")
         return Monitor(env)
     return _make
 
