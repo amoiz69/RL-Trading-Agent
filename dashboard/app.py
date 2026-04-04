@@ -489,10 +489,14 @@ with tab1:
         metrics, bnh = st.session_state.results[run_key]
 
         # Quick headline metrics at the top
+        # NOTE: Streamlit detects delta sign from the FIRST character of the string.
+        # Format must be "-$500" (sign first) not "$-500" (dollar first → always green).
+        _pnl      = metrics['final_value'] - 10_000
+        _pnl_str  = (f"+${_pnl:,.0f}" if _pnl >= 0 else f"-${abs(_pnl):,.0f}") + " vs start"
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Final portfolio",
                   f"${metrics['final_value']:,.0f}",
-                  delta=f"${metrics['final_value'] - 10_000:+,.0f} vs start")
+                  delta=_pnl_str)
         c2.metric("Total return",
                   f"{metrics['total_return']:+.1f}%",
                   delta=_delta_vs_bnh(metrics['total_return'], bnh['total_return']))
