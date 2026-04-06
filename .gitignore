@@ -16,3 +16,8 @@ __pycache__/
 *.egg-info/
 .ipynb_checkpoints/
 wandb/
+
+# Live trading — credentials and logs (never commit these)
+live/.env
+live/trade_log.csv
+live/trader.log

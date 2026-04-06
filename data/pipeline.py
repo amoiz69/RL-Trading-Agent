@@ -251,3 +251,69 @@ def fetch_and_process(ticker: str,
     raw_df = raw.loc[featured.index]
 
     return train_df, val_df, test_df, raw_df
+
+
+# ------------------------------------------------------------------ #
+# Live observation builder  (used by live/paper_trader.py)
+# ------------------------------------------------------------------ #
+
+def fetch_live_obs(ticker: str,
+                   window_size: int = 10,
+                   warmup_start: str = "2013-01-01"):
+    """
+    Fetch the latest daily bar for `ticker` and return a model-ready
+    observation window, scaled consistently with the training pipeline.
+
+    Steps:
+        1. Download OHLCV from warmup_start through today (disk-cached).
+           Force-refresh the cache if the last bar is more than 2 days old.
+        2. Engineer the same 8 features as training
+           (Close, RSI, MACD, EMA20, EMA50, BBWidth, OBV, ATR).
+        3. Fit RobustScaler on the training-period rows only (pre-2020)
+           then transform the full history — identical to fetch_and_process.
+        4. Return the last window_size scaled rows as the observation array.
+
+    Returns
+    -------
+    obs           : np.ndarray shape (window_size, 8), dtype float32
+    current_price : float   most recent raw Close price (USD)
+    latest_date   : pd.Timestamp  date of the most recent bar
+    featured      : pd.DataFrame  full feature history (for diagnostics)
+    """
+    today = pd.Timestamp.today().normalize().strftime("%Y-%m-%d")
+
+    # Refresh stale cache (older than 2 calendar days)
+    cache_path = RAW_DIR / f"{ticker}.csv"
+    if cache_path.exists():
+        try:
+            cached     = pd.read_csv(cache_path, index_col=0, parse_dates=True)
+            days_stale = (pd.Timestamp.today() - cached.index[-1]).days
+            if days_stale > 2:
+                cache_path.unlink()
+        except Exception:
+            cache_path.unlink()
+
+    raw      = download(ticker, start=warmup_start, end=today)
+    featured = engineer_features(raw)
+
+    if len(featured) < window_size:
+        raise ValueError(
+            f"Not enough rows for {ticker}: got {len(featured)}, need >= {window_size}."
+        )
+
+    train_mask = featured.index <= TRAIN_END
+    if train_mask.sum() < 50:
+        raise ValueError(
+            f"Fewer than 50 pre-2020 rows for {ticker}. Ticker may be too new."
+        )
+
+    scaler    = RobustScaler()
+    scaler.fit(featured[train_mask].values)
+    scaled_arr = scaler.transform(featured.values)
+    scaled     = pd.DataFrame(scaled_arr, index=featured.index, columns=featured.columns)
+
+    obs           = scaled.iloc[-window_size:].values.astype(np.float32)
+    current_price = float(raw["Close"].iloc[-1])
+    latest_date   = featured.index[-1]
+
+    return obs, current_price, latest_date, featured
